@@ -72,27 +72,43 @@ def main():
                 sys.exit(1)
 
         edx.log_message('Crawling course content. This may take several minutes.')
-        videos = edx.get_course_data(course_url)
+        chapters = edx.get_course_data(course_url)
+        
+        if type(chapters) is list and len(chapters) > 0:
+            edx.log_message('Crawling complete! Found {} Chapters. Downloading...'.format(len(chapters)), 'green')
+            for chap in chapters:
+                chname=chap.get('name')
+                seq=chap.get('seq')
+                print(chname,"...")
+                #print(seq)
+                if not os.path.exists(slugify(chname)):
+                    os.makedirs(slugify(chname))
+                i=0
+                for page in seq:
+                    i+=1
+                    pfile=os.path.join(slugify(chname), '{}.html'.format(page['seqName']))
+                    edx.save_web_page(page['seqUrl'],pfile)
+                    ###edx.parse_video(pfile,slugify(chname))
 
-        if type(videos) is list and len(videos) > 0:
-            edx.log_message('Crawling complete! Found {} videos. Downloading videos now.'.format(len(videos)), 'green')
-            for vid in videos:
-                vid_title = vid.get('title')
-                course_name = vid.get('course')
-                if course_url and vid_title:
-                    save_main_dir = os.path.join(os.getcwd(), slugify(course_name))
-                    save_as = os.path.join(save_main_dir, '{}.mp4'.format(slugify(vid_title)))
-                    if not os.path.exists(save_main_dir):
-                        os.makedirs(save_main_dir)
+        # if type(videos) is list and len(videos) > 0:
+            # edx.log_message('Crawling complete! Found {} videos. Downloading videos now.'.format(len(videos)), 'green')
+            # for vid in videos:
+                # vid_title = vid.get('title')
+                # course_name = vid.get('course')
+                # if course_url and vid_title:
+                    # save_main_dir = os.path.join(os.getcwd(), slugify(course_name))
+                    # save_as = os.path.join(save_main_dir, '{}.mp4'.format(slugify(vid_title)))
+                    # if not os.path.exists(save_main_dir):
+                        # os.makedirs(save_main_dir)
                     
-                    if os.path.exists(save_as):
-                        edx.log_message('Already downloaded. Skipping {}'.format(save_as))
-                    else:
-                        edx.log_message('Downloading video {}'.format(vid_title))
-                        edx.download_video(vid.get('url'), save_as)
-                        edx.log_message('Downloaded and stored at {}'.format(save_as), 'green')
-            edx.log_message('All done! Videos have been downloaded.')
-            sys.exit(0)
+                    # if os.path.exists(save_as):
+                        # edx.log_message('Already downloaded. Skipping {}'.format(save_as))
+                    # else:
+                        # edx.log_message('Downloading video {}'.format(vid_title))
+                        # edx.download_video(vid.get('url'), save_as)
+                        # edx.log_message('Downloaded and stored at {}'.format(save_as), 'green')
+            # edx.log_message('All done! Videos have been downloaded.')
+            # sys.exit(0)
         else:
             edx.log_message('No downloadable videos found for the course!', 'red')
             sys.exit(1)

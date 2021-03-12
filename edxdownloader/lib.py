@@ -16,6 +16,7 @@ COURSE_BASE_URL = '{}/courses'.format(BASE_URL)
 COURSE_OUTLINE_BASE_URL = '{}/course_home/v1/outline'.format(BASE_API_URL)
 XBLOCK_BASE_URL = '{}/xblock'.format(BASE_URL)
 LOGIN_API_URL = '{}/user/v1/account/login_session/'.format(BASE_API_URL)
+COURSE_BASE_META_URL = '{}/course_home/v1/course_metadata'.format(BASE_API_URL)
 
 # Chunk size to download videos in chunks
 VID_CHUNK_SIZE = 1024
@@ -143,6 +144,7 @@ class EdxDownloader:
             pass
         raise EdxLoginError('Login failed. Please try again.')
 
+
     def get_course_data(self, course_url):
         # Gets the course media URLs. The media URLs are returned
         # as a list if found.
@@ -158,6 +160,7 @@ class EdxDownloader:
         
         # Construct the course outline URL
         COURSE_OUTLINE_URL = '{}/{}'.format(COURSE_OUTLINE_BASE_URL, COURSE_SLUG)
+        COURSE_META_URL = '{}/{}'.format(COURSE_BASE_META_URL, COURSE_SLUG)
 
         # Check either authenticated or not before proceeding.
         # If not, raise the EdxNotAuthenticatedError exception.
@@ -166,66 +169,80 @@ class EdxDownloader:
         
         # Make an HTTP GET request to outline URL and get tabs
         outline_resp = self.requests_session.get(COURSE_OUTLINE_URL)
+        course_meta_resp = self.requests_session.get(COURSE_META_URL)
+        is_enrolled = course_meta_resp.json().get('is_enrolled')
+        course_title= course_meta_resp.json().get('title')
+        course_name=course_title
         blocks = outline_resp.json().get('course_blocks')
-        collected_vids = []
+        
         collected_courses = []
+        all_chapters = []
         all_videos = []
+       
 
-        if blocks is None:
-            # If no blocks or tabs are found, we wil assume that the user is not authorized
+        #if blocks is None:
+        if not is_enrolled:
+            #UPDATED# If no blocks or tabs are found, we wil assume that the user is not authorized
             # to access the course.
             raise EdxNotEnrolledError('Looks like you are not enrolled in this course.')
         else:
-            course_name = None
-            # Iterate through blocks and get course name, video URLs, and video titles.
-            for k, v in blocks.get('blocks').items():
-                if v.get('type') == 'course' and v.get('display_name') is not None:
-                    course_name = v.get('display_name')
-                    if course_name not in collected_courses:
-                        collected_courses.append(course_name)
-                    else:
-                        continue
+            jsobj=blocks.get('blocks')
+            for k, v in blocks.get('blocks').items():                
+                if v.get('type') == 'chapter' and v.get('display_name') is not None:
+                        sequentials=[]
+                        for seq in v.get('children'):
+                            sequentials.append({
+                            'seqUrl':'{}/{}'.format(XBLOCK_BASE_URL, seq),
+                            'seqName':jsobj[seq]['display_name']
+                            #'seqName': v[seq]['display_name']
+                            })
+                        all_chapters.append({
+                            'name': v.get('display_name'),
+                            'pages_urls': v.get('lms_web_url'),
+                            'seq': sequentials
+                        })
                 
-                if course_name is not None:
-                    block_id = v.get('id')
-                    block_url = '{}/{}/jump_to/{}'.format(COURSE_BASE_URL, COURSE_SLUG, block_id)
-                    block_res = self.requests_session.get(block_url)
-                    main_block_id = block_res.url.split('/')[-1]
-                    main_block_url = '{}/{}'.format(XBLOCK_BASE_URL, main_block_id)
-                    main_block_res = self.requests_session.get(main_block_url)
+                # if course_name is not None:
+                    # block_id = v.get('id')
+                    # block_url = '{}/{}/jump_to/{}'.format(COURSE_BASE_URL, COURSE_SLUG, block_id)
+                    # block_res = self.requests_session.get(block_url)
+                    # main_block_id = block_res.url.split('/')[-1]
+                    # main_block_url = '{}/{}'.format(XBLOCK_BASE_URL, main_block_id)
+                    # main_block_res = self.requests_session.get(main_block_url)
 
-                    soup = BeautifulSoup(html.unescape(main_block_res.text), 'lxml')
+                    # soup = BeautifulSoup(html.unescape(main_block_res.text), 'lxml')
 
-                    for vid in soup.find_all('div', {'class': 'xblock-student_view-video'}):
-                        vid_url_el = vid.find('div', {'class': 'video'})
-                        if vid_url_el:
-                            metadata = vid_url_el.get('data-metadata')
-                            if metadata:
-                                vid_url = None
-                                # Get the data-metadata attribute HTML
-                                # and parse it as a JSON object.
-                                metadata = json.loads(metadata)
-                                if 'sources' in metadata:
-                                    for vidsource in list(metadata['sources']):
-                                        if str(vidsource).endswith('.mp4'):
-                                            vid_url = vidsource
-                                            # Break the loop if a valid video URL
-                                            # is found.
-                                            break
-                                if vid_url and vid_url not in collected_vids:
-                                    vid_title = v.get('display_name')
-                                    vid_heading_el = vid.find('h3', {'class': 'hd hd-2'})
-                                    if vid_heading_el:
-                                        vid_title = '{} - {}'.format(vid_title, vid_heading_el.text.strip())
+                    # for vid in soup.find_all('div', {'class': 'xblock-student_view-video'}):
+                        # vid_url_el = vid.find('div', {'class': 'video'})
+                        # if vid_url_el:
+                            # metadata = vid_url_el.get('data-metadata')
+                            # if metadata:
+                                # vid_url = None
+                                # # Get the data-metadata attribute HTML
+                                # # and parse it as a JSON object.
+                                # metadata = json.loads(metadata)
+                                # if 'sources' in metadata:
+                                    # for vidsource in list(metadata['sources']):
+                                        # if str(vidsource).endswith('.mp4'):
+                                            # vid_url = vidsource
+                                            # # Break the loop if a valid video URL
+                                            # # is found.
+                                            # break
+                                # if vid_url and vid_url not in collected_vids:
+                                    # vid_title = v.get('display_name')
+                                    # vid_heading_el = vid.find('h3', {'class': 'hd hd-2'})
+                                    # if vid_heading_el:
+                                        # vid_title = '{} - {}'.format(vid_title, vid_heading_el.text.strip())
 
-                                    # Append the video object to all_videos list
-                                    all_videos.append({
-                                        'title': vid_title,
-                                        'url': vid_url,
-                                        'course': course_name
-                                    })
-                                    collected_vids.append(vid_url)                
-        return all_videos
+                                    # # Append the video object to all_videos list
+                                    # all_videos.append({
+                                        # 'title': vid_title,
+                                        # 'url': vid_url,
+                                        # 'course': course_name
+                                    # })
+                                    # collected_vids.append(vid_url)               
+        # return all_videos,all_chapters
+        return all_chapters
     
     def download_video(self, vid_url, save_as):
         # Download the video
@@ -238,3 +255,71 @@ class EdxDownloader:
                     f.write(chunk)
             progress_bar.close()
         return True
+        
+    def save_web_page(self, page_url, save_as):
+        with self.requests_session.get(page_url, allow_redirects=True) as resp:
+            with open(save_as, 'wb') as p:
+                p.write(resp.content)
+    # def parse_video(self, page_url, path):
+        # collected_vids = []
+        # soup = BeautifulSoup(html.unescape(page_url), 'lxml')
+        # for vid in soup.find_all('div', {'class': 'xblock-student_view-video'}):
+            # vid_url_el = vid.find('div', {'class': 'video'})
+            # if vid_url_el:
+                # metadata = vid_url_el.get('data-metadata')
+                # if metadata:
+                    # if 'sources' in metadata:
+                        # for vidsource in list(metadata['sources']):
+                            # #check Type1
+                            # if str(vidsource).endswith('.mp4'):
+                                # vid_url = vidsource
+                                # break
+                # if vid_url and vid_url not in collected_vids:
+    # def extract_video_youtube_url(self, text):
+        # re_video_youtube_url = re.compile(r'data-streams=&#34;.*?1.0\d+\:(?:.*?)(.{11})')
+        # video_youtube_url = None
+        # match_video_youtube_url = re_video_youtube_url.search(text)
+
+        # if match_video_youtube_url is None:
+            # re_video_youtube_url = re.compile(r'https://www.youtube.com/embed/(.{11})\?rel=')
+            # match_video_youtube_url = re_video_youtube_url.search(text)
+
+        # if match_video_youtube_url is not None:
+            # video_id = match_video_youtube_url.group(1)
+            # video_youtube_url = 'https://youtube.com/watch?v=' + video_id
+
+        # return video_youtube_url
+    
+    # def extract_mp4_urls(self, text):
+        # # mp4 urls may be in two places, in the field data-sources, and as <a>
+        # # refs This regex tries to match all the appearances, however we
+        # # exclude the ';' # character in the urls, since it is used to separate
+        # # multiple urls in one string, however ';' is a valid url name
+        # # character, but it is not really common.
+        # re_mp4_urls = re.compile(r'(?:(https?://[^;]*?\.mp4))')
+        # mp4_urls = list(set(re_mp4_urls.findall(text)))
+
+        # return mp4_urls        
+        
+    # def extract_resources_urls(self, text, BASE_URL, file_formats):
+
+        # formats = '|'.join(file_formats)
+        # re_resources_urls = re.compile(r'&lt;a href=(?:&#34;|")([^"&]*.(?:' + formats + '))(?:&#34;|")')
+        # resources_urls = []
+        # for url in re_resources_urls.findall(text):
+            # if url.startswith('http') or url.startswith('https'):
+                # resources_urls.append(url)
+            # elif url.startswith('//'):
+                # resources_urls.append('https:' + url)
+            # else:
+                # resources_urls.append(BASE_URL + url)
+
+        # # we match links to youtube videos as <a href> and add them to the
+        # # download list
+        # re_youtube_links = re.compile(r'&lt;a href=(?:&#34;|")(https?\:\/\/(?:www\.)?(?:youtube\.com|youtu\.?be)\/.*?)(?:&#34;|")')
+        # youtube_links = re_youtube_links.findall(text)
+        # resources_urls += youtube_links
+
+        # return resources_urls        
+                    
+                        
